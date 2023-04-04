@@ -28,28 +28,55 @@ function addPageToURL(url) {
   const regex = /page=(\d+)/;
   const match = url.match(regex);
 
-  //from ttps://www.occ.com.mx/empleos/?tm=0
-  if (!match) return url.concat("&page=2");
-  //to https://www.occ.com.mx/empleos/?page=2
+  if (!match) {
+    if (url.endsWith("/")) {
+      return url.concat("?page=2");
+    } else {
+      return url.concat("&page=2");
+    }
+  }
 
   const pageNumber = match && match[1];
   const newPage = parseInt(pageNumber) + 1;
   return url.replace(regex, `page=${newPage}`);
 }
+
 async function refreshJobsLocalStorage(jobs) {
-  // Get the "jobs" object from local storage, or initialize it as an empty array if it doesn't exist
   const { jobs: currentJobs = [] } = await getObjectInLocalStorage("jobs");
-
-  // Combine the existing jobs with the new jobs using the spread operator
   const allJobs = [...currentJobs, ...jobs];
-
-  // Save the combined jobs back to local storage
   await saveObjectInLocalStorage({ jobs: allJobs });
 }
 
-function getMetricsJobs(allJobs) {
-  allJobs.map((job) => {});
+function groupJobsByCity(jobs) {
+  const groupedJobs = jobs.reduce((acc, job) => {
+    const { city, salary } = job;
+
+    const regex = /(\$[\d,]+)\s*-\s*(\$[\d,]+)/;
+    const salaryRange = salary.match(regex);
+
+    const minSalary = salaryRange
+      ? parseInt(salaryRange[1].replace(/[\$,]/g, ""))
+      : null;
+    const maxSalary = salaryRange
+      ? parseInt(salaryRange[2].replace(/[\$,]/g, ""))
+      : null;
+    const index = acc.findIndex((group) => group.city === city);
+
+    if (index === -1) {
+      acc.push({ city, jobs: [job], count: 1, minSalary, maxSalary });
+    } else {
+      acc[index].jobs.push(job);
+      acc[index].count++;
+      acc[index].minSalary = Math.min(acc[index].minSalary, minSalary);
+      acc[index].maxSalary = Math.max(acc[index].maxSalary, maxSalary);
+    }
+
+    return acc;
+  }, []);
+
+  return groupedJobs;
 }
+
 chrome.runtime.onConnect.addListener(function (port) {
   port.onMessage.addListener(async function ({ message, jobs }, sender) {
     if (message === "start") {
@@ -80,9 +107,9 @@ chrome.runtime.onConnect.addListener(function (port) {
     }
     if (message === "finish") {
       statusScrap = "stop";
-      const { jobs: data } = await getObjectInLocalStorage("jobs");
-
-      chrome.runtime.sendMessage({ message: "ok", data });
+      const { jobs: data = [] } = await getObjectInLocalStorage("jobs");
+      const groupJobs = groupJobsByCity(data);
+      chrome.runtime.sendMessage({ message: "ok", data: groupJobs });
       //port.postMessage({ message: "stop" });
       return;
     }
