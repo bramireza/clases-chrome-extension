@@ -1,4 +1,5 @@
 console.log("Ejecutando el content script 2.0");
+
 function getJobInformation() {
   const elemCardJobs = [...document.querySelectorAll('[id*="jobcard-"]')];
   const jobs = elemCardJobs.map((cardJob) => {
@@ -8,44 +9,56 @@ function getJobInformation() {
         children: [
           {
             children: [
-              { innerText: fecha },
+              { innerText: date },
               { innerText: title },
-              { innerText: salario },
-              { innerText: beneficios },
-              {},
-              {
-                children: [elementEmpresCiudad],
-              },
+              { innerText: salary },
             ],
           },
         ],
       },
     ] = cardJob.children;
 
-    const empresa = elementEmpresCiudad?.querySelector("label")?.innerText;
-    const ciudad = elementEmpresCiudad?.querySelector("p")?.innerText;
-    return { url, fecha, title, salario, beneficios, empresa, ciudad };
+    const city = cardJob.querySelector("[class*=zonesLinks-]").textContent;
+
+    return { url, date, title, salary, city };
   });
 
   return jobs;
 }
 
+function clickNextButton() {
+  const nextPageButton = document.querySelector("[class*=next-]");
+  nextPageButton.click();
+}
+
 //Connect to background
 const portBackground = chrome.runtime.connect({ name: "content-background" });
 
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+portBackground.postMessage({ message: "online" });
 portBackground.onMessage.addListener(async ({ message }) => {
-  if ((message = "nextpage")) {
-    const nextPageButton = document.querySelector("[class*=next-]");
-    nextPageButton.click();
+  if (message === "scrap") {
+    wait(3000);
+    const jobs = getJobInformation();
+    const nextPageButton = document.querySelector("[class*=next-");
+    const message = !!nextPageButton ? "next" : "finish";
+    portBackground.postMessage({ message, jobs });
   }
 });
 
 chrome.runtime.onConnect.addListener(function (port) {
   port.onMessage.addListener(function ({ message }) {
-    if (message === "getJobs") {
+    if (message === "scrap") {
+      wait(3000);
       const jobs = getJobInformation();
-      port.postMessage({ message: "ok", data: jobs });
-      portBackground.postMessage({ message: "finish" });
+      const nextPageButton = document.querySelector("[class*=next-");
+      const message = !!nextPageButton ? "next" : "finish";
+      portBackground.postMessage({ message, jobs });
     }
   });
 });
